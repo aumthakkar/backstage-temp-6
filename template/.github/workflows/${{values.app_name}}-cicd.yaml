@@ -35,7 +35,7 @@ jobs:
         with:
           push: true
           platforms: linux/amd64, linux/arm64
-          tags: aumthakkar/$((values.app_name}}:${{ '${{ env.COMMIT_ID }}'}}
+          tags: aumthakkar/${{values.app_name}}:${{ '${{ env.COMMIT_ID }}'}}
 
     outputs:
       commit_id: ${{ '${{ env.COMMIT_ID }}'}}
@@ -52,7 +52,7 @@ jobs:
           sudo apt update && sudo apt install python3-pip -y
           pip install yq --break-system-packages
           echo ${{ '${{ needs.ci.outputs.commit_id }}' }}
-          yq -Yi '.image.tag = "${{ '${{ needs.ci.outputs.commit_id }}' }}"' charts/$((values.app_name}}/values-${{values.app_env}} .yaml
+          yq -Yi '.image.tag = "${{ '${{ needs.ci.outputs.commit_id }}' }}"' charts/${{values.app_name}}/values-${{values.app_env}} .yaml
 
       - name: Commit changes to the GitHub repo
         uses: EndBug/add-and-commit@v9
@@ -77,23 +77,23 @@ jobs:
 
       - name: ArgoCD app create and app sync
         run: |
-          repo="https://github.com/aumthakkar/$((values.app_name}}.git"
+          repo="https://github.com/aumthakkar/${{values.app_name}}.git"
 
           argocd app list | grep -q ${repo} || argocd repo add ${repo}
 
           #If app exists, then delete it first to start afresh
-          if argocd app get $((values.app_name}} > /dev/null 2>&1; then
-            echo "Deleting previous version of $((values.app_name}}..."
-            argocd app delete $((values.app_name}} --cascade --yes --wait
+          if argocd app get ${{values.app_name}} > /dev/null 2>&1; then
+            echo "Deleting previous version of ${{values.app_name}}..."
+            argocd app delete ${{values.app_name}} --cascade --yes --wait
 
             # wait whilst the app gets deleted
-            while argocd app get $((values.app_name}}; do
-              echo "Waiting for arogcd $((values.app_name}} to be deleted..."
+            while argocd app get ${{values.app_name}}; do
+              echo "Waiting for arogcd ${{values.app_name}} to be deleted..."
               sleep 2
             done
           fi
 
-          argocd app create $((values.app_name}} \
+          argocd app create ${{values.app_name}} \
           --dest-namespace dev \
           --dest-server https://kubernetes.default.svc \
           --path charts/python-app \
@@ -103,6 +103,6 @@ jobs:
           --sync-policy manual \
           --values values.yaml
 
-          argocd app sync $((values.app_name}} 
-          argocd app wait $((values.app_name}} --timeout 120
+          argocd app sync ${{values.app_name}} 
+          argocd app wait ${{values.app_name}} --timeout 120
         
