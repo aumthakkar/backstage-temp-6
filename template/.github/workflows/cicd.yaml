@@ -1,0 +1,108 @@
+name: continuous integration of python docker app
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - src/**
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Docker
+        uses: docker/setup-docker-action@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Obtain shortened commit_sha
+        shell: bash
+        run: |
+          echo "COMMIT_ID=${GITHUB_SHA::6}" >> ${GITHUB_ENV}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          platforms: linux/amd64, linux/arm64
+          tags: aumthakkar/py6app:${{ env.COMMIT_ID }}
+
+    outputs:
+      commit_id: ${{ env.COMMIT_ID }}
+
+  cd:
+    needs: ci
+    runs-on: self-hosted
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v6
+
+      - name: Install yq utility 
+        run: |
+          sudo apt update && sudo apt install python3-pip -y
+          pip install yq --break-system-packages
+          echo "${{ needs.ci.outputs.commit_id }}"
+          yq -Yi '.image.tag = "${{ needs.ci.outputs.commit_id }}"' charts/python-app/values.yaml
+
+      - name: Commit changes to the GitHub repo
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: "pushed the image with tag: ${{ needs.ci.outputs.commit_id }}"
+
+      - name: Install ArgoCD CLI
+        run: |
+          VERSION=$(curl -L -s https://raw.githubusercontent.com/argoproj/argo-cd/stable/VERSION)
+          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/download/v$VERSION/argocd-linux-amd64
+          sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+          sudo chmod +x /usr/local/bin/argocd
+          rm argocd-linux-amd64
+
+      - name: ArgoCD CLI Login
+        run: |
+          argocd login argocd-server.argocd \
+          --grpc-web \
+          --insecure \
+          --username admin \
+          --password ${{ secrets.ARGOCD_PASSWORD }}
+
+      - name: ArgoCD app create and app sync
+        run: |
+          repo="https://github.com/aumthakkar/py6app.git"
+
+          argocd app list | grep -q ${repo} || argocd repo add ${repo}
+
+          #If app exists, then delete it first to start afresh
+          if argocd app get py6app > /dev/null 2>&1; then
+            echo "Deleting previous version of py6app..."
+            argocd app delete py6app --cascade --yes --wait
+
+            # wait whilst the app gets deleted
+            while argocd app get py6app; do
+              echo "Waiting for arogcd py6app to be deleted..."
+              sleep 2
+            done
+          fi
+
+          argocd app create py6app \
+          --dest-namespace dev \
+          --dest-server https://kubernetes.default.svc \
+          --path charts/python-app \
+          --repo ${repo} \
+          --revision main \
+          --sync-option CreateNamespace=true \
+          --sync-policy manual \
+          --values values.yaml
+
+          argocd app sync py6app 
+          argocd app wait py6app --timeout 120
+        
