@@ -9,7 +9,8 @@ def info():
     return jsonify({
         "time" : time.ctime(),
         "host" : socket.gethostname(),
-        "env" : "dev",
+        "app_name" : "${{values.app_name}}"
+        "env" : "${{values.app_Env}}",
         "msg" : "Hi Pranav!, you are doing good! :-)"
 
     })
