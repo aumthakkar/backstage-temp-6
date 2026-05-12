@@ -1,0 +1,99 @@
+name: Backstage IDP CI/CD pipeline for ${{ values.app_name }}
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Docker Login
+        uses: docker/login-action@v4
+        with:
+          username: ${{ '${{ secrets.DOCKERHUB_USERNAME }}' }}
+          password: ${{ '${{ secrets.DOCKERHUB_PASSWORD }}' }}
+
+      - name: Shorten Commit_Id
+        shell: bash
+        run: |
+          echo "COMMIT_ID=${GITHUB_SHA::6}" >> ${GITHUB_ENV}
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Push to Docker Hub
+        uses: docker/build-push-action@v7
+        with:
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: aumthakkar/${{ values.app_name }}:${{ '${{ env.COMMIT_ID }}' }}
+
+    outputs:
+      commit_id: ${{ '${{ env.COMMIT_ID }}' }}
+
+  cd:
+    needs: ci
+    runs-on: orbstack-runner
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
+      - name: Install yq (Binary)
+        run: |
+          sudo apt update && sudo apt install -y wget
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_arm64 -O /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update Tag
+        run: yq -i '.image.tag = "${{ '${{ needs.ci.outputs.commit_id }}' }}"' charts/${{ values.app_name }}/values-${{ values.app_env }}.yaml
+
+      - name: Commit Changes to GitHub
+        uses: EndBug/add-and-commit@v10
+        with:
+          message: "pushed the image with tag: ${{ '${{ needs.ci.outputs.commit_id }}' }}"
+
+      - name: Install ArgoCD CLI and sync app
+        run: |
+          VERSION=$(curl -L -s https://raw.githubusercontent.com/argoproj/argo-cd/stable/VERSION)
+          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/download/v$VERSION/argocd-linux-amd64
+          sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+          sudo chmod +x /usr/local/bin/argocd
+          sudo rm argocd-linux-amd64
+      
+      - name: ArgoCD login
+        run: |
+          argocd login argocd-server.argocd \
+          --username ${{ '${{ secrets.ARGOCD_USERNAME }}' }} \
+          --password ${{ '${{ secrets.ARGOCD_PASSWORD }}' }} \
+          --grpc-web \
+          --insecure
+
+      - name: ArgoCD App create and sync
+        run: |
+          REPO="https://github.com/aumthakkar/may26-${{ values.app_name }}.git"
+          argocd repo list ${REPO} | grep -q ${REPO} || argocd repo add ${REPO}
+      
+          argocd app create ${{ values.app_name }} \
+          --dest-namespace ${{ values.app_env }}
+          --dest-server https://kubernetes.default.svc \
+          --path charts/${{ values.app_name }} \
+          --repo ${REPO} \
+          --revision main \
+          --sync-option CreateNamespace=true \
+          --sync-policy manual \
+          --values charts/py6app/values.yaml
+
+          argocd app sync ${{ values.app_name }}
+          argocd app wait ${{ values.app_name }} --timeout 120
+
+
+
+
+
+
+
+        
