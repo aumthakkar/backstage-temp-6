@@ -74,7 +74,7 @@ jobs:
 
       - name: ArgoCD App create and sync
         run: |
-          REPO="https://github.com/aumthakkar/may26-${{ values.app_name }}.git"
+          REPO="https://github.com/aum-thakkar/${{ values.app_name }}.git"
           argocd repo list ${REPO} | grep -q ${REPO} || argocd repo add ${REPO}
       
           argocd app create ${{ values.app_name }} \
