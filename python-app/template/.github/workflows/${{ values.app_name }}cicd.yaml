@@ -78,14 +78,14 @@ jobs:
           argocd repo list ${REPO} | grep -q ${REPO} || argocd repo add ${REPO}
       
           argocd app create ${{ values.app_name }} \
-          --dest-namespace ${{ values.app_env }}
+          --dest-namespace ${{ values.app_env }} \
           --dest-server https://kubernetes.default.svc \
           --path charts/${{ values.app_name }} \
           --repo ${REPO} \
           --revision main \
           --sync-option CreateNamespace=true \
           --sync-policy manual \
-          --values charts/py6app/values.yaml
+          --values charts/values-${{ values.app_env }}.yaml
 
           argocd app sync ${{ values.app_name }}
           argocd app wait ${{ values.app_name }} --timeout 120
