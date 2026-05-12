@@ -85,7 +85,7 @@ jobs:
           --revision main \
           --sync-option CreateNamespace=true \
           --sync-policy manual \
-          --values charts/${{ values.app_name }}/values-${{ values.app_env }}.yaml
+          --values values-${{ values.app_env }}.yaml
 
           argocd app sync ${{ values.app_name }}
           argocd app wait ${{ values.app_name }} --timeout 120
